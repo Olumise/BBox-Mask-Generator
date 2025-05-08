@@ -1,0 +1,13 @@
+# Configuration for Cog ⚙️
+# See https://github.com/replicate/cog/blob/main/docs/yaml.md
+
+build:
+  # set to true if your model requires a GPU
+  gpu: false
+  python_version: "3.11"
+  python_packages:
+    - "pillow==10.0.0"
+    - "numpy==1.24.3"
+
+# predict.py defines how predictions are run on your model
+predict: "predict.py:Predictor"

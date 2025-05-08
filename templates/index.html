@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Mask Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="number"], input[type="file"] {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .coordinates-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .helper-text {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .preset-container {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Face Mask Generator</h1>
+    <p>This tool helps you create a mask image for face inpainting based on face detection coordinates.</p>
+    
+    <div class="container">
+        <form method="POST" enctype="multipart/form-data">
+            <div class="form-group">
+                <label for="image">Upload Your Image:</label>
+                <input type="file" id="image" name="image" accept="image/*" required>
+            </div>
+            
+            <div class="preset-container">
+                <h3>Face Coordinates</h3>
+                <p class="helper-text">Enter the face bounding box coordinates from your detection API:</p>
+                
+                <div class="form-group">
+                    <label for="bbox">Paste JSON Coordinates from Replicate AI:</label>
+                    <input type="text" id="bbox" placeholder='e.g. {"bbox": [313, 203, 762, 830], "label": "face", "confidence": 0.8513628244400024}' style="width: 100%; padding: 8px;">
+                    <div style="display: flex; gap: 10px; margin-top: 10px;">
+                        <button type="button" onclick="parseBbox()" style="flex: 1;">Parse Coordinates</button>
+                        <button type="button" onclick="fillExample()" style="flex: 1; background-color: #2196F3;">Fill Example</button>
+                    </div>
+                    <p id="confidence-info" style="display: none; margin-top: 10px; color: #4CAF50; font-weight: bold;"></p>
+                </div>
+                
+                <div class="coordinates-container">
+                    <div class="form-group">
+                        <label for="x1">Left (x1):</label>
+                        <input type="number" id="x1" name="x1" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="y1">Top (y1):</label>
+                        <input type="number" id="y1" name="y1" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="x2">Right (x2):</label>
+                        <input type="number" id="x2" name="x2" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="y2">Bottom (y2):</label>
+                        <input type="number" id="y2" name="y2" required>
+                    </div>
+                </div>
+            </div>
+            
+            <button type="submit">Generate Mask</button>
+        </form>
+        
+        {% if mask_image %}
+        <div class="result">
+            <h2>Results</h2>
+            <div style="display: flex; flex-wrap: wrap; gap: 20px;">
+                <div style="flex: 1; min-width: 300px;">
+                    <h3>Original Image</h3>
+                    <img src="data:image/jpeg;base64,{{ original_image }}" style="max-width: 100%;">
+                </div>
+                <div style="flex: 1; min-width: 300px;">
+                    <h3>Generated Mask</h3>
+                    <img src="data:image/png;base64,{{ mask_image }}" style="max-width: 100%;">
+                    
+                    <form method="POST" action="/download_mask">
+                        <input type="hidden" name="mask_data" value="{{ mask_image }}">
+                        <button type="submit" style="margin-top: 15px;">Download Mask</button>
+                    </form>
+                </div>
+            </div>
+            
+            <div style="margin-top: 30px;">
+                <h3>How to Use with Replicate AI</h3>
+                <p>For the second step of your image generation workflow:</p>
+                <ol>
+                    <li>Upload the original image as <code>image_file</code></li>
+                    <li>Upload the mask as <code>image_mask</code></li>
+                    <li>Set your other parameters (LoRA URL, scales, etc.)</li>
+                </ol>
+            </div>
+        </div>
+        {% endif %}
+        
+        {% if error %}
+        <div style="color: red; margin-top: 20px; padding: 10px; border: 1px solid red; border-radius: 4px;">
+            {{ error }}
+        </div>
+        {% endif %}
+    </div>
+
+    <script>
+        function parseBbox() {
+            const bboxInput = document.getElementById('bbox').value.trim();
+            if (!bboxInput) return;
+            
+            try {
+                // Try to parse as JSON
+                let data;
+                if (bboxInput.includes('bbox')) {
+                    // Handle Replicate AI format: {"bbox": [313, 203, 762, 830], "label": "face", "confidence": 0.8513628244400024}
+                    data = JSON.parse(bboxInput);
+                    if (data.bbox && data.bbox.length === 4) {
+                        document.getElementById('x1').value = data.bbox[0];
+                        document.getElementById('y1').value = data.bbox[1];
+                        document.getElementById('x2').value = data.bbox[2];
+                        document.getElementById('y2').value = data.bbox[3];
+                        
+                        // Show confidence if available
+                        if (data.confidence) {
+                            const confidencePercent = (data.confidence * 100).toFixed(2);
+                            document.getElementById('confidence-info').textContent = 
+                                `Face detected with ${confidencePercent}% confidence`;
+                            document.getElementById('confidence-info').style.display = 'block';
+                        }
+                        return;
+                    }
+                }
+                
+                // Try to parse as array
+                const arrayMatch = bboxInput.match(/\[(\d+),\s*(\d+),\s*(\d+),\s*(\d+)\]/);
+                if (arrayMatch) {
+                    document.getElementById('x1').value = arrayMatch[1];
+                    document.getElementById('y1').value = arrayMatch[2];
+                    document.getElementById('x2').value = arrayMatch[3];
+                    document.getElementById('y2').value = arrayMatch[4];
+                    return;
+                }
+                
+                alert('Could not parse the coordinates. Please enter them manually.');
+            } catch (e) {
+                alert('Invalid format. Please check your input.');
+                console.error(e);
+            }
+        }
+        
+        // Example data to help users
+        function fillExample() {
+            document.getElementById('bbox').value = '{"bbox": [313, 203, 762, 830], "label": "face", "confidence": 0.8513628244400024}';
+            parseBbox();
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Mask Generator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input[type="number"], input[type="file"], input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .result {
+            margin-top: 20px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .coordinates-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .helper-text {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .preset-container {
+            margin-bottom: 20px;
+            padding: 15px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }
+        #canvas-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            max-width: 100%;
+        }
+        .canvas-wrapper {
+            flex: 1;
+            min-width: 300px;
+        }
+        .error {
+            color: red;
+            padding: 10px;
+            border: 1px solid red;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Face Mask Generator</h1>
+    <p>This tool helps you create a mask image for face inpainting based on face detection coordinates.</p>
+    
+    <div class="container">
+        <div class="form-group">
+            <label for="image">Upload Your Image:</label>
+            <input type="file" id="image" accept="image/*">
+        </div>
+        
+        <div class="preset-container">
+            <h3>Face Coordinates</h3>
+            <p class="helper-text">Enter the face bounding box coordinates from your detection API:</p>
+            
+            <div class="form-group">
+                <label for="bbox">Paste JSON Coordinates from Replicate AI:</label>
+                <textarea id="bbox" placeholder='Paste one or more detections, e.g.
+{"bbox": [313, 203, 762, 830], "label": "face", "confidence": 0.8513628244400024}
+{"bbox": [671, 348, 739, 441], "label": "ear", "confidence": 0.48982444405555725}' style="width: 100%; padding: 8px; height: 100px;"></textarea>
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <button type="button" onclick="parseMultipleBbox()" style="flex: 1;">Parse Coordinates</button>
+                    <button type="button" onclick="fillMultipleExample()" style="flex: 1; background-color: #2196F3;">Fill Example</button>
+                </div>
+            </div>
+            
+            <div id="detection-list" style="margin-top: 15px; display: none;">
+                <h4>Detected Objects:</h4>
+                <div id="detection-items" style="margin-top: 10px;"></div>
+            </div>
+            
+            <div class="coordinates-container">
+                <div class="form-group">
+                    <label for="x1">Left (x1):</label>
+                    <input type="number" id="x1" value="313">
+                </div>
+                <div class="form-group">
+                    <label for="y1">Top (y1):</label>
+                    <input type="number" id="y1" value="203">
+                </div>
+                <div class="form-group">
+                    <label for="x2">Right (x2):</label>
+                    <input type="number" id="x2" value="762">
+                </div>
+                <div class="form-group">
+                    <label for="y2">Bottom (y2):</label>
+                    <input type="number" id="y2" value="830">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="padding">Padding (%):</label>
+                <input type="number" id="padding" value="10" min="0" max="50">
+                <p class="helper-text">Add extra space around the face area (10% recommended for better blending)</p>
+            </div>
+            
+            <div class="form-group">
+                <label for="mask-shape">Mask Shape:</label>
+                <select id="mask-shape" style="width: 100%; padding: 8px;">
+                    <option value="rectangle">Rectangle</option>
+                    <option value="circle">Circle</option>
+                </select>
+                <p class="helper-text">Choose the mask shape that works best for your specific inpainting needs</p>
+            </div>
+        </div>
+        
+        <button type="button" onclick="generateMask()">Generate Mask</button>
+        
+        <div id="error-container" class="error" style="display: none;"></div>
+        
+        <div id="canvas-container" style="display: none;">
+            <div class="canvas-wrapper">
+                <h3>Original Image</h3>
+                <canvas id="original-canvas"></canvas>
+            </div>
+            <div class="canvas-wrapper">
+                <h3>Generated Mask</h3>
+                <canvas id="mask-canvas"></canvas>
+                <button type="button" onclick="downloadMask()" style="margin-top: 15px;">Download Mask</button>
+            </div>
+        </div>
+        
+        <div id="instructions" style="margin-top: 30px; display: none;">
+            <h3>How to Use with Replicate AI</h3>
+            <p>For the second step of your image generation workflow:</p>
+            <ol>
+                <li>Upload the original image as <code>image_file</code></li>
+                <li>Upload the downloaded mask as <code>image_mask</code></li>
+                <li>Set your other parameters (LoRA URL, scales, etc.)</li>
+            </ol>
+            <div style="margin-top: 15px; padding: 15px; background-color: #f0f8ff; border-left: 4px solid #2196F3; border-radius: 4px;">
+                <h4 style="margin-top: 0;">Why Circular Masks?</h4>
+                <p>Circular masks are recommended for face inpainting because:</p>
+                <ul>
+                    <li>They better match the natural shape of faces</li>
+                    <li>They create smoother transitions between the inpainted area and the original image</li>
+                    <li>They help avoid sharp corners that can look unnatural in the final result</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables to store the image and mask
+        let originalImage = null;
+        let maskImage = null;
+        
+        // Parse multiple bounding boxes from the input
+        function parseMultipleBbox() {
+            const bboxInput = document.getElementById('bbox').value.trim();
+            if (!bboxInput) return;
+            
+            try {
+                // First try to parse the entire input as a single JSON object
+                try {
+                    const data = JSON.parse(bboxInput);
+                    if (data.bbox && data.bbox.length === 4) {
+                        const detections = [{
+                            bbox: data.bbox,
+                            label: data.label || 'unknown',
+                            confidence: data.confidence || 0
+                        }];
+                        
+                        // Display the detection
+                        displayDetections(detections);
+                        useDetection(0);
+                        return;
+                    }
+                } catch (e) {
+                    // Not a single JSON object, continue with other parsing methods
+                }
+                
+                // Try to find all JSON objects in the input
+                const jsonRegex = /\{[^\{\}]*"bbox"[^\{\}]*\}/g;
+                const jsonMatches = bboxInput.match(jsonRegex);
+                
+                if (jsonMatches && jsonMatches.length > 0) {
+                    const detections = [];
+                    
+                    for (const match of jsonMatches) {
+                        try {
+                            const data = JSON.parse(match);
+                            if (data.bbox && data.bbox.length === 4) {
+                                detections.push({
+                                    bbox: data.bbox,
+                                    label: data.label || 'unknown',
+                                    confidence: data.confidence || 0
+                                });
+                            }
+                        } catch (e) {
+                            // Ignore parsing errors for individual matches
+                        }
+                    }
+                    
+                    if (detections.length > 0) {
+                        // Sort detections by confidence (highest first)
+                        detections.sort((a, b) => b.confidence - a.confidence);
+                        
+                        // Display the detections
+                        displayDetections(detections);
+                        useDetection(0);
+                        return;
+                    }
+                }
+                
+                // If we're still here, try to parse as multiple lines
+                const lines = bboxInput.split(/\n|\r\n/);
+                const detections = [];
+                
+                // Try to accumulate lines into a complete JSON object
+                let currentJson = '';
+                let braceCount = 0;
+                
+                for (const line of lines) {
+                    const trimmedLine = line.trim();
+                    if (!trimmedLine) continue;
+                    
+                    // Count opening and closing braces to track JSON objects
+                    for (let i = 0; i < trimmedLine.length; i++) {
+                        if (trimmedLine[i] === '{') braceCount++;
+                        if (trimmedLine[i] === '}') braceCount--;
+                    }
+                    
+                    currentJson += trimmedLine;
+                    
+                    // If we have a complete JSON object
+                    if (braceCount === 0 && currentJson.includes('bbox')) {
+                        try {
+                            const data = JSON.parse(currentJson);
+                            if (data.bbox && data.bbox.length === 4) {
+                                detections.push({
+                                    bbox: data.bbox,
+                                    label: data.label || 'unknown',
+                                    confidence: data.confidence || 0
+                                });
+                            }
+                        } catch (e) {
+                            // Ignore parsing errors
+                        }
+                        
+                        // Reset for next JSON object
+                        currentJson = '';
+                    }
+                }
+                
+                if (detections.length === 0) {
+                    showError('No valid detections found. Please check your input.');
+                    return;
+                }
+                
+                // Sort detections by confidence (highest first)
+                detections.sort((a, b) => b.confidence - a.confidence);
+                
+                // Display the detections
+                displayDetections(detections);
+                
+                // Use the first detection (highest confidence) by default
+                useDetection(0);
+                
+            } catch (e) {
+                showError('Error parsing input: ' + e.message);
+                console.error(e);
+            }
+        }
+        
+        // Display the list of detections
+        function displayDetections(detections) {
+            const container = document.getElementById('detection-items');
+            container.innerHTML = '';
+            
+            detections.forEach((detection, index) => {
+                const item = document.createElement('div');
+                item.style.padding = '10px';
+                item.style.margin = '5px 0';
+                item.style.backgroundColor = index === 0 ? '#e8f5e9' : '#f5f5f5';
+                item.style.borderRadius = '4px';
+                item.style.border = '1px solid #ddd';
+                item.style.display = 'flex';
+                item.style.justifyContent = 'space-between';
+                item.style.alignItems = 'center';
+                
+                const confidencePercent = (detection.confidence * 100).toFixed(2);
+                
+                const info = document.createElement('div');
+                info.innerHTML = `<strong>${detection.label}</strong> (${confidencePercent}% confidence)<br>
+                                Coordinates: [${detection.bbox.join(', ')}]`;
+                
+                const button = document.createElement('button');
+                button.textContent = 'Use This';
+                button.onclick = () => useDetection(index);
+                
+                item.appendChild(info);
+                item.appendChild(button);
+                container.appendChild(item);
+            });
+            
+            document.getElementById('detection-list').style.display = 'block';
+        }
+        
+        // Use the selected detection
+        function useDetection(index) {
+            const container = document.getElementById('detection-items');
+            const items = container.children;
+            
+            // Update styling
+            for (let i = 0; i < items.length; i++) {
+                items[i].style.backgroundColor = i === index ? '#e8f5e9' : '#f5f5f5';
+            }
+            
+            // Get the detection data
+            const detectionText = items[index].querySelector('div').innerText;
+            const coordsMatch = detectionText.match(/\[(\d+), (\d+), (\d+), (\d+)\]/);
+            
+            if (coordsMatch) {
+                document.getElementById('x1').value = coordsMatch[1];
+                document.getElementById('y1').value = coordsMatch[2];
+                document.getElementById('x2').value = coordsMatch[3];
+                document.getElementById('y2').value = coordsMatch[4];
+            }
+        }
+        
+        // Example data to help users
+        function fillMultipleExample() {
+            const example1 = '{"bbox": [278, 184, 686, 684], "label": "face", "confidence": 0.7894313335418701}';
+            const example2 = '{"bbox": [671, 348, 739, 441], "label": "ear", "confidence": 0.48982444405555725}';
+            document.getElementById('bbox').value = example1 + String.fromCharCode(10) + example2;
+            parseMultipleBbox();
+        }
+        
+        function showError(message) {
+            const errorContainer = document.getElementById('error-container');
+            errorContainer.textContent = message;
+            errorContainer.style.display = 'block';
+            
+            // Hide after 5 seconds
+            setTimeout(() => {
+                errorContainer.style.display = 'none';
+            }, 5000);
+        }
+        
+        function generateMask() {
+            // Hide any previous errors
+            document.getElementById('error-container').style.display = 'none';
+            
+            // Get the image file
+            const imageInput = document.getElementById('image');
+            if (!imageInput.files || imageInput.files.length === 0) {
+                showError('Please select an image file');
+                return;
+            }
+            
+            // Get the coordinates
+            const x1 = parseInt(document.getElementById('x1').value);
+            const y1 = parseInt(document.getElementById('y1').value);
+            const x2 = parseInt(document.getElementById('x2').value);
+            const y2 = parseInt(document.getElementById('y2').value);
+            const padding = parseInt(document.getElementById('padding').value) / 100; // Convert to decimal
+            
+            if (isNaN(x1) || isNaN(y1) || isNaN(x2) || isNaN(y2)) {
+                showError('Invalid coordinates. Please enter valid numbers.');
+                return;
+            }
+            
+            // Load the image
+            const file = imageInput.files[0];
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    // Create canvas for original image
+                    const originalCanvas = document.getElementById('original-canvas');
+                    originalCanvas.width = img.width;
+                    originalCanvas.height = img.height;
+                    const originalCtx = originalCanvas.getContext('2d');
+                    originalCtx.drawImage(img, 0, 0);
+                    
+                    // Create canvas for mask
+                    const maskCanvas = document.getElementById('mask-canvas');
+                    maskCanvas.width = img.width;
+                    maskCanvas.height = img.height;
+                    const maskCtx = maskCanvas.getContext('2d');
+                    
+                    // Fill with black
+                    maskCtx.fillStyle = 'black';
+                    maskCtx.fillRect(0, 0, maskCanvas.width, maskCanvas.height);
+                    
+                    // Calculate padding
+                    const width = x2 - x1;
+                    const height = y2 - y1;
+                    const padX = Math.round(width * padding);
+                    const padY = Math.round(height * padding);
+                    
+                    // Calculate padded coordinates
+                    const paddedX1 = Math.max(0, x1 - padX);
+                    const paddedY1 = Math.max(0, y1 - padY);
+                    const paddedX2 = Math.min(img.width, x2 + padX);
+                    const paddedY2 = Math.min(img.height, y2 + padY);
+                    
+                    // Get the mask shape
+                    const maskShape = document.getElementById('mask-shape').value;
+                    
+                    maskCtx.fillStyle = 'white';
+                    
+                    if (maskShape === 'circle') {
+                        // Draw a circle for the face area
+                        const centerX = (paddedX1 + paddedX2) / 2;
+                        const centerY = (paddedY1 + paddedY2) / 2;
+                        const radiusX = (paddedX2 - paddedX1) / 2;
+                        const radiusY = (paddedY2 - paddedY1) / 2;
+                        const radius = Math.max(radiusX, radiusY);
+                        
+                        maskCtx.beginPath();
+                        maskCtx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
+                        maskCtx.fill();
+                    } else {
+                        // Draw a rectangle for the face area
+                        maskCtx.fillRect(
+                            paddedX1, 
+                            paddedY1, 
+                            paddedX2 - paddedX1, 
+                            paddedY2 - paddedY1
+                        );
+                    }
+                    
+                    // Show the canvas container
+                    document.getElementById('canvas-container').style.display = 'flex';
+                    document.getElementById('instructions').style.display = 'block';
+                    
+                    // Store the images for download
+                    originalImage = img;
+                    maskImage = maskCanvas;
+                };
+                img.src = e.target.result;
+            };
+            
+            reader.readAsDataURL(file);
+        }
+        
+        function downloadMask() {
+            if (!maskImage) {
+                showError('No mask generated yet');
+                return;
+            }
+            
+            // Create a download link
+            const link = document.createElement('a');
+            link.download = 'face_mask.png';
+            link.href = document.getElementById('mask-canvas').toDataURL('image/png');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+    </script>
+</body>
+</html>
