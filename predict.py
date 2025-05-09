@@ -30,7 +30,7 @@ class Predictor(BasePredictor):
             default="rectangle",
             choices=["rectangle", "circle"],
         ),
-    ) -> Image.Image:
+    ) -> Path:
         """Run face mask generation on the input image"""
         
         # Load the image
@@ -58,9 +58,14 @@ class Predictor(BasePredictor):
         # Ensure the mask is in grayscale format
         mask = mask.convert("L")
         
-        # Return the image object directly
+        # Save the mask to a temporary file
+        import tempfile
+        out_path = Path(tempfile.mkdtemp()) / "mask.png"
+        mask.save(str(out_path))
+        
+        # Return the path directly
         # Replicate will handle displaying it in the UI
-        return mask
+        return out_path
     
     def create_face_mask(self, img, bbox, padding=0.1, mask_shape="rectangle"):
         """Create a black and white mask for face inpainting"""
