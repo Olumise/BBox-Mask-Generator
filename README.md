@@ -2,14 +2,7 @@
 
 This model generates masks for face inpainting based on bounding box coordinates from face detection. It's designed to work with Replicate AI's two-stage image generation workflow.
 
-## 🧭 Two-Stage Image Generation Workflow
-
-### Step 1: Style Exploration (Using LumaPortrait Model)
-
-- Generate a reference image using `twinstarcreatives/luma-portrait`
-- This creates the style and composition you want
-
-### Step 2: Identity Swap (Using This Tool + Your LoRA Model)
+## Identity Swap (Using This Tool + Your LoRA Model)
 
 1. Get face detection coordinates from your reference image
 2. Use this tool to generate a mask for the face area
